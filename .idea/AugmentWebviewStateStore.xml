@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AugmentWebviewStateStore">
+    <option name="stateMap">
+      <map>
+        <entry key="CHAT_STATE" value="{&quot;agentExecutionMode&quot;:&quot;auto&quot;,&quot;isPanelCollapsed&quot;:true,&quot;displayedAnnouncements&quot;:[],&quot;conversations&quot;:{&quot;423961e7-a105-4c53-b34a-ef2abae83279&quot;:{&quot;id&quot;:&quot;423961e7-a105-4c53-b34a-ef2abae83279&quot;,&quot;createdAtIso&quot;:&quot;2025-12-18T17:27:23.154Z&quot;,&quot;lastInteractedAtIso&quot;:&quot;2025-12-18T17:27:23.154Z&quot;,&quot;chatHistory&quot;:[],&quot;feedbackStates&quot;:{},&quot;toolUseStates&quot;:{},&quot;draftExchange&quot;:{&quot;request_message&quot;:&quot;&quot;,&quot;rich_text_json_repr&quot;:{&quot;type&quot;:&quot;doc&quot;,&quot;content&quot;:[{&quot;type&quot;:&quot;paragraph&quot;}]},&quot;mentioned_items&quot;:[],&quot;status&quot;:&quot;draft&quot;},&quot;selectedModelId&quot;:&quot;claude-haiku-4-5&quot;,&quot;requestIds&quot;:[],&quot;isPinned&quot;:false,&quot;isShareable&quot;:false,&quot;extraData&quot;:{&quot;isAgentConversation&quot;:true,&quot;hasDirtyEdits&quot;:false},&quot;personaType&quot;:0},&quot;__NEW_AGENT__&quot;:{&quot;id&quot;:&quot;__NEW_AGENT__&quot;,&quot;createdAtIso&quot;:&quot;2025-12-18T17:38:32.416Z&quot;,&quot;lastInteractedAtIso&quot;:&quot;2025-12-18T17:38:32.416Z&quot;,&quot;chatHistory&quot;:[],&quot;feedbackStates&quot;:{},&quot;toolUseStates&quot;:{},&quot;draftExchange&quot;:{&quot;request_message&quot;:&quot;&quot;,&quot;rich_text_json_repr&quot;:{&quot;type&quot;:&quot;doc&quot;,&quot;content&quot;:[{&quot;type&quot;:&quot;paragraph&quot;}]},&quot;status&quot;:&quot;draft&quot;},&quot;selectedModelId&quot;:&quot;claude-haiku-4-5&quot;,&quot;requestIds&quot;:[],&quot;isPinned&quot;:false,&quot;isShareable&quot;:false,&quot;extraData&quot;:{&quot;isAgentConversation&quot;:true,&quot;hasDirtyEdits&quot;:false},&quot;personaType&quot;:0,&quot;rootTaskUuid&quot;:&quot;07812e0d-9b7c-4c37-9014-cf2d228c6ac0&quot;}},&quot;currentConversationId&quot;:&quot;__NEW_AGENT__&quot;}" />
+      </map>
+    </option>
+  </component>
+</project>
