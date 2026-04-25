@@ -6,30 +6,25 @@
 //! # Example
 //!
 //! ```no_run
-//! use gpui::prelude::*;
 //! use declarative_ui::*;
 //!
-//! struct Item { name: String }
-//!
-//! fn render_ui(items: Vec<Item>) -> gpui::Div {
-//!     let right_panel = gpui::div();
-//!     ui! {
-//!         col(size_full bg_0b0f14) {
-//!             row(items_center justify_between p_12) {
-//!                 text("Title" text_lg bold)
-//!                 { right_panel }
-//!             }
-//!
-//!             list(
-//!                 id="items"
-//!                 count=(items.len())
-//!                 render=|ix| {
-//!                     ui!(text_raw((items[ix].name.clone()))).into_any_element()
-//!                 }
-//!                 gap_8
-//!                 p_12
-//!             )
+//! ui! {
+//!     col(size_full bg_0b0f14) {
+//!         row(items_center justify_between p_12) {
+//!             text("Title" text_lg bold)
+//!             { right_panel }
 //!         }
+//!
+//!         list(
+//!             id="items"
+//!             count=(items.len())
+//!             render=|ix| {
+//!                 let item = &items[ix];
+//!                 text((item.name.clone()) text_sm)
+//!             }
+//!             gap_8
+//!             p_12
+//!         )
 //!     }
 //! }
 //! ```
@@ -107,20 +102,20 @@ fn parse_px(style: &str, prefix: &str) -> Option<f32> {
 
 /// Apply a single style string to a Styled element
 pub fn apply_style<T: Styled>(el: T, style: &str) -> T {
-    if let Some(name) = style.strip_prefix("bg-")
-        && let Some(color) = palette_color(name)
-    {
-        return el.bg(rgb(color));
+    if let Some(name) = style.strip_prefix("bg-") {
+        if let Some(color) = palette_color(name) {
+            return el.bg(rgb(color));
+        }
     }
-    if let Some(name) = style.strip_prefix("text-")
-        && let Some(color) = palette_color(name)
-    {
-        return el.text_color(rgb(color));
+    if let Some(name) = style.strip_prefix("text-") {
+        if let Some(color) = palette_color(name) {
+            return el.text_color(rgb(color));
+        }
     }
-    if let Some(name) = style.strip_prefix("border-")
-        && let Some(color) = palette_color(name)
-    {
-        return el.border_color(rgb(color));
+    if let Some(name) = style.strip_prefix("border-") {
+        if let Some(color) = palette_color(name) {
+            return el.border_color(rgb(color));
+        }
     }
 
     match style {
@@ -179,6 +174,8 @@ pub fn apply_style<T: Styled>(el: T, style: &str) -> T {
         "content-evenly" => return el.content_evenly(),
         "content-stretch" => return el.content_stretch(),
         "font-bold" | "bold" => return el.font_weight(FontWeight::BOLD),
+        "font-semibold" | "semibold" => return el.font_weight(FontWeight::SEMIBOLD),
+        "font-medium" | "medium" => return el.font_weight(FontWeight::MEDIUM),
         "italic" => return el.italic(),
         "not-italic" => return el.not_italic(),
         "underline" => return el.underline(),
@@ -197,6 +194,8 @@ pub fn apply_style<T: Styled>(el: T, style: &str) -> T {
         "overflow-hidden" => return el.overflow_hidden(),
         "overflow-x-hidden" => return el.overflow_x_hidden(),
         "overflow-y-hidden" => return el.overflow_y_hidden(),
+        "h-full" => return el.h_full(),
+        "w-full" => return el.w_full(),
         "text-left" => return el.text_left(),
         "text-center" => return el.text_center(),
         "text-right" => return el.text_right(),
@@ -276,6 +275,18 @@ pub fn apply_style<T: Styled>(el: T, style: &str) -> T {
     if let Some(v) = parse_px(style, "size-") {
         return el.size(px(v));
     }
+    if let Some(v) = parse_px(style, "min-w-") {
+        return el.min_w(px(v));
+    }
+    if let Some(v) = parse_px(style, "max-w-") {
+        return el.max_w(px(v));
+    }
+    if let Some(v) = parse_px(style, "min-h-") {
+        return el.min_h(px(v));
+    }
+    if let Some(v) = parse_px(style, "max-h-") {
+        return el.max_h(px(v));
+    }
     if let Some(v) = parse_px(style, "top-") {
         return el.top(px(v));
     }
@@ -329,6 +340,10 @@ pub fn apply_style<T: Styled>(el: T, style: &str) -> T {
         return el.opacity(v);
     }
 
+    #[cfg(debug_assertions)]
+    if !style.is_empty() {
+        eprintln!("[declarative_ui] unknown style token: `{}`", style);
+    }
     el
 }
 
@@ -410,56 +425,17 @@ where
 /// Main declarative UI macro
 ///
 /// Example:
-/// ```no_run
-/// use gpui::prelude::*;
-/// use gpui::AnyElement;
-/// use declarative_ui::*;
-///
-/// fn render() -> gpui::Div {
-///     let title = "Hello";
-///     let footer_panel = gpui::div();
-///     ui! {
-///         col(size_full bg_0b0f14) {
-///             row(items_center justify_between) {
-///                 text(title text_lg bold)
-///             }
-///             { footer_panel }
+/// ```
+/// ui! {
+///     col(size_full bg_0b0f14) {
+///         row(items_center justify_between) {
+///             text(title text_lg bold)
 ///         }
+///         { footer_panel }
 ///     }
 /// }
 /// ```
-#[macro_export]
-macro_rules! ui {
-    // { component } at root
-    ( { $child:expr } ) => {
-        $child
-    };
-
-    // text_raw(expr) at root
-    ( text_raw ( $content:expr ) ) => {
-        $content
-    };
-
-    // label(expr) at root
-    ( label ( $content:expr ) ) => {
-        $content
-    };
-
-    // list(...) at root
-    ( list ( $($args:tt)* ) ) => {
-        $crate::ui_list!($($args)*)
-    };
-
-    // New DSL: node(args) { children... }
-    ( $node:ident ( $($args:tt)* ) { $($children:tt)* } ) => {
-        $crate::ui_node!($node, ( $($args)* ), { $($children)* })
-    };
-
-    // New DSL: node(args)
-    ( $node:ident ( $($args:tt)* ) ) => {
-        $crate::ui_node!($node, ( $($args)* ))
-    };
-}
+pub use declarative_macros::ui;
 
 /// Build a node from the new DSL
 #[macro_export]
@@ -799,6 +775,21 @@ macro_rules! ui_apply_args {
         $crate::ui_apply_button_event_closure!($el, on_mouse_up_out, $ev, $window, $cx, $body, $($rest)*);
     };
 
+    // on_mouse_down/up = (listener_expr) — wraps in MouseButton::Left automatically
+    ( $el:ident, on_mouse_down = ( $handler:expr ) $($rest:tt)* ) => {
+        $el = $el.on_mouse_down(gpui::MouseButton::Left, $handler);
+        $crate::ui_apply_args!($el, $($rest)*);
+    };
+    ( $el:ident, on_mouse_up = ( $handler:expr ) $($rest:tt)* ) => {
+        $el = $el.on_mouse_up(gpui::MouseButton::Left, $handler);
+        $crate::ui_apply_args!($el, $($rest)*);
+    };
+    // on_mouse_move = (listener_expr)
+    ( $el:ident, on_mouse_move = ( $handler:expr ) $($rest:tt)* ) => {
+        $el = $el.on_mouse_move($handler);
+        $crate::ui_apply_args!($el, $($rest)*);
+    };
+    // generic property assignment: prop = (expr)
     ( $el:ident, $prop:ident = ( $value:expr ) $($rest:tt)* ) => {
         $el = $el.$prop($value);
         $crate::ui_apply_args!($el, $($rest)*);
