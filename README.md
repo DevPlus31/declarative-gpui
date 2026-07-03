@@ -1,5 +1,10 @@
 # declarative-gpui
 
+[![crates.io](https://img.shields.io/crates/v/declarative-gpui.svg)](https://crates.io/crates/declarative-gpui)
+[![docs.rs](https://docs.rs/declarative-gpui/badge.svg)](https://docs.rs/declarative-gpui)
+[![CI](https://github.com/DevPlus31/declarative-gpui/actions/workflows/ci.yml/badge.svg)](https://github.com/DevPlus31/declarative-gpui/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/declarative-gpui.svg)](#license)
+
 A declarative `ui!` macro for building [GPUI](https://www.gpui.rs/) element
 trees with Tailwind-style tokens, real Rust control flow, and **zero runtime
 overhead** — every token compiles directly to GPUI builder calls, and colors are
@@ -26,6 +31,66 @@ fn render(items: &[Item], dark: bool) -> impl IntoElement {
     }
 }
 ```
+
+## Getting started
+
+Add the macro to your project (published as
+[`declarative-gpui`](https://crates.io/crates/declarative-gpui) on crates.io;
+its engine, [`declarative-gpui-core`](https://crates.io/crates/declarative-gpui-core),
+is an implementation detail cargo pulls in automatically):
+
+```sh
+cargo add declarative-gpui
+```
+
+You also need GPUI itself — either the crates.io release or the Zed
+repository (this macro's token tables are verified against zed rev
+`bb48a42`; see [GPUI compatibility](#gpui-compatibility)):
+
+```toml
+[dependencies]
+declarative-gpui = "0.1"
+gpui = "0.2"
+# or the rev this crate is verified against:
+# gpui = { git = "https://github.com/zed-industries/zed", rev = "bb48a42983f2a4bb9ac9d31c63abe02497088f67" }
+```
+
+Then use `ui!` anywhere you build GPUI elements — it expands to plain
+builder calls, so it drops into any `Render` impl (`gpui::prelude::*` must
+be in scope, as with hand-written GPUI):
+
+```rust
+use declarative_gpui::ui;
+use gpui::prelude::*;
+use gpui::{Context, IntoElement, Window};
+
+struct Counter {
+    count: usize,
+}
+
+impl Render for Counter {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        ui! {
+            col(gap_8, p_16, bg_1c1a17, rounded_lg) {
+                text(format!("Count: {}", self.count), text_lg, semibold, text_f5f0e8)
+                div(
+                    id = "increment",
+                    on_click = cx.listener(|this, _, _, cx| {
+                        this.count += 1;
+                        cx.notify();
+                    }),
+                    cursor_pointer, px_12, py_4, rounded_md, bg_e0b184, text_1c1a17
+                ) {
+                    text("Increment")
+                }
+            }
+        }
+    }
+}
+```
+
+The full element and style-token reference is below. Minimum supported Rust
+version: **1.88**.
 
 ## Code → pixels
 
