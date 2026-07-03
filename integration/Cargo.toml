@@ -1,0 +1,13 @@
+[package]
+name = "declarative-gpui-integration"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mustapha BENCHOUK <devplus31@gmail.com>"]
+publish = false
+
+[dependencies]
+declarative-gpui = { path = ".." }
+# Pinned to the revision the style-token tables were verified against
+# (crates/gpui/src/styled.rs + gpui_macros/src/styles.rs). Bump this rev and
+# rebuild to detect GPUI API drift.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "bb48a42983f2a4bb9ac9d31c63abe02497088f67" }

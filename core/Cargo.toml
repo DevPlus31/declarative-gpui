@@ -1,0 +1,15 @@
+[package]
+name = "declarative-gpui-core"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mustapha BENCHOUK <devplus31@gmail.com>"]
+rust-version = "1.88" # let-chains (stabilized 1.88) are used throughout
+description = "Parsing and expansion core for the declarative-gpui ui! GPUI macro"
+license = "MIT OR Apache-2.0"
+readme = "../README.md"
+repository = "https://github.com/DevPlus31/declarative-gpui"
+
+[dependencies]
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+proc-macro2 = "1.0"

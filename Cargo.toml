@@ -1,0 +1,33 @@
+[workspace]
+members = ["core", "integration", "examples"]
+# `integration` and `examples` compile all of GPUI — excluded from default
+# builds/tests. Run them explicitly:
+#   cargo test -p declarative-gpui-integration
+#   cargo run -p declarative-gpui-examples --release
+default-members = [".", "core"]
+
+[package]
+name = "declarative-gpui"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mustapha BENCHOUK <devplus31@gmail.com>"]
+rust-version = "1.88" # let-chains (stabilized 1.88) are used throughout
+description = "Declarative ui! macro for building GPUI element trees with Tailwind-style tokens at zero runtime cost"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/DevPlus31/declarative-gpui"
+keywords = ["gpui", "ui", "dsl", "declarative", "macro"]
+categories = ["gui", "development-tools::procedural-macro-helpers"]
+# The package lives at the workspace root: without an explicit include list,
+# `cargo package` would bundle the workspace members and screenshots too.
+include = ["/src", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+# examples/ is a workspace member (the showcase app), not this package's
+# cargo example targets — without this, cargo tries to compile it as one.
+autoexamples = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+declarative-gpui-core = { path = "core", version = "0.1.0" }
+proc-macro2 = "1.0"

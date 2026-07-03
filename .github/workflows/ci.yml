@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly GPUI-drift check (Mondays 06:00 UTC) — see the gpui-drift job.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Fast: fmt, clippy, unit + expansion tests. No GPUI involved.
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --exclude declarative-gpui-integration --all-targets -- -D warnings
+      - run: cargo test
+
+  # Slow: compile every DSL feature against real GPUI at the pinned zed rev.
+  # Windows runner because that's the environment the crate is verified on
+  # (GPUI needs no extra system packages there). Heavily cached after the
+  # first run.
+  integration:
+    if: github.event_name != 'schedule'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+      - run: cargo test -p declarative-gpui-integration
+
+  # Weekly / manual: repoint gpui at latest zed main and try to compile.
+  # Failure here means GPUI's API drifted from the macro's token tables —
+  # informational, not blocking.
+  gpui-drift:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+      - name: Point gpui at latest zed main
+        shell: pwsh
+        run: |
+          $f = "integration/Cargo.toml"
+          (Get-Content -Raw $f) -replace 'rev = "[0-9a-f]+"', 'branch = "main"' | Set-Content -NoNewline $f
+          cargo update -p gpui
+      - run: cargo test -p declarative-gpui-integration

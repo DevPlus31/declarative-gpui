@@ -1,0 +1,17 @@
+[package]
+name = "declarative-gpui-examples"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mustapha BENCHOUK <devplus31@gmail.com>"]
+publish = false
+
+[[bin]]
+name = "showcase"
+path = "src/main.rs"
+
+[dependencies]
+declarative-gpui = { path = ".." }
+# Same pinned rev as the integration crate. `gpui_platform` provides the
+# per-OS application shell (`gpui_platform::application()`).
+gpui = { git = "https://github.com/zed-industries/zed", rev = "bb48a42983f2a4bb9ac9d31c63abe02497088f67" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "bb48a42983f2a4bb9ac9d31c63abe02497088f67" }
