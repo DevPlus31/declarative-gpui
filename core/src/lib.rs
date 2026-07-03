@@ -22,6 +22,29 @@ pub fn ui_impl(input: TokenStream2) -> TokenStream2 {
     out
 }
 
+/// Expand the contents of a `color!( ... )` invocation into a `gpui::Hsla`
+/// struct literal — the same compile-time RGB→HSL conversion the style
+/// tokens use, exposed standalone so theme palettes can be `const`. Accepts
+/// 3/4/6/8-digit hex (optional leading `#`, optionally quoted) or a named
+/// color: `color!(1c1a17)`, `color!("#f5f0e8")`, `color!(red)`.
+pub fn color_impl(input: TokenStream2) -> TokenStream2 {
+    let raw: String = input.to_string();
+    let s: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
+    let s = s.trim_matches('"');
+    let s = s.strip_prefix('#').unwrap_or(s);
+    match resolve_color(s) {
+        Some(c) => c.hsla_expr(),
+        None => syn::Error::new_spanned(
+            input,
+            format!(
+                "`{s}` is not a color; expected 3/4/6/8-digit hex \
+                 (optional leading `#`) or a named color"
+            ),
+        )
+        .to_compile_error(),
+    }
+}
+
 struct Ui {
     nodes: Vec<UiNode>,
 }
@@ -45,6 +68,9 @@ fn parse_nodes(input: ParseStream) -> Result<Vec<UiNode>> {
 }
 
 struct IfNode {
+    /// `Some(pat)` makes this an `if let #pat = #cond`; `None` is a plain
+    /// boolean `if #cond`.
+    pat: Option<syn::Pat>,
     cond: Expr,
     then_branch: Vec<UiNode>,
     else_branch: Option<Vec<UiNode>>,
@@ -69,6 +95,10 @@ struct MatchNode {
 
 enum UiNode {
     Block(Expr),
+    /// `{ ..expr }` — appended via `.children(expr)`, so any
+    /// `IntoIterator<Item: IntoElement>` works: `Option` (renders nothing on
+    /// `None`), `Vec<AnyElement>`, iterators.
+    Spread(Expr),
     If(IfNode),
     For(ForNode),
     Match(MatchNode),
@@ -80,12 +110,30 @@ impl Parse for UiNode {
         if input.peek(syn::token::Brace) {
             let content;
             braced!(content in input);
+            // `..` must be claimed before Expr parsing, which would otherwise
+            // swallow it as a RangeTo expression.
+            if content.peek(Token![..]) {
+                content.parse::<Token![..]>()?;
+                let expr: Expr = content.parse()?;
+                return Ok(UiNode::Spread(expr));
+            }
             let expr: Expr = content.parse()?;
             return Ok(UiNode::Block(expr));
         }
 
         if input.peek(Token![if]) {
             input.parse::<Token![if]>()?;
+            // `if let` needs manual parsing — syn's Expr does not accept a
+            // `let` at this position. Branch bodies are ordinary node lists,
+            // so multi-node `if let` bodies work like any other branch.
+            let pat = if input.peek(Token![let]) {
+                input.parse::<Token![let]>()?;
+                let pat = syn::Pat::parse_multi_with_leading_vert(input)?;
+                input.parse::<Token![=]>()?;
+                Some(pat)
+            } else {
+                None
+            };
             let cond = syn::Expr::parse_without_eager_brace(input)?;
             let then_content;
             braced!(then_content in input);
@@ -103,6 +151,7 @@ impl Parse for UiNode {
                 }
             }
             return Ok(UiNode::If(IfNode {
+                pat,
                 cond,
                 then_branch,
                 else_branch,
@@ -184,6 +233,18 @@ fn emit_node(out: &mut TokenStream2, node: &UiNode, ctx: Ctx) {
             Ctx::TopLevel => expr.to_tokens(out),
             Ctx::Child => out.extend(quote! { __el = __el.child( #expr ); }),
         },
+        UiNode::Spread(expr) => match ctx {
+            // No parent element to receive the children — reject rather than
+            // emit something that half-works.
+            Ctx::TopLevel => out.extend(
+                syn::Error::new_spanned(
+                    expr,
+                    "spread `{ ..expr }` requires a parent element to receive the children",
+                )
+                .to_compile_error(),
+            ),
+            Ctx::Child => out.extend(quote! { __el = __el.children( #expr ); }),
+        },
         UiNode::Element(el) => match ctx {
             Ctx::TopLevel => emit_element(out, el),
             Ctx::Child => {
@@ -196,7 +257,10 @@ fn emit_node(out: &mut TokenStream2, node: &UiNode, ctx: Ctx) {
         },
         UiNode::If(if_node) => {
             let cond = &if_node.cond;
-            out.extend(quote! { if #cond });
+            match &if_node.pat {
+                Some(pat) => out.extend(quote! { if let #pat = #cond }),
+                None => out.extend(quote! { if #cond }),
+            }
             let mut then_body = TokenStream2::new();
             emit_nodes(&mut then_body, &if_node.then_branch, ctx);
             out.append(braced_group(then_body));
@@ -284,8 +348,18 @@ impl Parse for Element {
             }
         }
 
+        // Leaf elements (text-likes take content as an argument; `list`
+        // renders through its closure) provably have no children, so a
+        // `{ ... }` after one is unambiguous: it can only belong to the
+        // enclosing node list. Leave it unconsumed and it parses as the
+        // next sibling — no wrapper container needed.
+        let is_leaf = matches!(
+            name.to_string().as_str(),
+            "text" | "text_raw" | "label" | "list"
+        );
+
         let mut children = Vec::new();
-        if input.peek(syn::token::Brace) {
+        if !is_leaf && input.peek(syn::token::Brace) {
             let content;
             braced!(content in input);
             while !content.is_empty() {
@@ -361,23 +435,9 @@ fn emit_element(out: &mut TokenStream2, el: &Element) {
 
     // ── text / text_raw / label ───────────────────────────────────────────
     if name_str == "text" || name_str == "text_raw" || name_str == "label" {
-        // Text elements take their content as the first argument; a `{ ... }`
-        // block after one (e.g. a sibling block node) parses as its children.
-        // Silently dropping them hides real bugs — reject instead.
-        if !el.children.is_empty() {
-            out.extend(
-                syn::Error::new(
-                    el.name.span(),
-                    "text elements take content as their first argument and have no \
-                     children; a `{ ... }` after a text element parses as its children \
-                     and would be dropped — move the block before the text element or \
-                     wrap both in a container",
-                )
-                .to_compile_error(),
-            );
-            return;
-        }
-
+        // Text elements take their content as the first argument and never
+        // have children — the parser leaves any following `{ ... }` to the
+        // enclosing node list, so `el.children` is empty by construction.
         let mut style_stmts = TokenStream2::new();
         let mut content: Option<&Expr> = None;
 
@@ -1540,12 +1600,59 @@ mod expansion_tests {
     }
 
     #[test]
-    fn text_with_children_is_a_compile_error() {
-        // A `{ ... }` block following a text element parses as its children;
-        // they used to be silently dropped (found via the showcase example).
+    fn block_after_text_becomes_a_sibling() {
+        // text provably has no children, so a `{ ... }` after it belongs to
+        // the parent. This used to be a compile error forcing a wrapper div.
         let out = expand(r#"row() { text("label") { some_sibling } }"#);
+        assert!(!out.contains("compile_error"), "{out}");
+        assert!(out.contains(r#"child ("label")"#), "{out}");
+        assert!(out.contains("child (some_sibling)"), "{out}");
+    }
+
+    #[test]
+    fn block_after_list_becomes_a_sibling() {
+        // Regression: `list` never emits children, so a `{ ... }` after it
+        // used to be parsed as children and silently dropped.
+        let out = expand(r#"col() { list(count = n, render = r) { some_sibling } }"#);
+        assert!(out.contains("child (some_sibling)"), "{out}");
+    }
+
+    #[test]
+    fn spread_appends_via_children() {
+        let out = expand(r#"col() { { ..maybe_badge } }"#);
+        assert!(out.contains("children (maybe_badge)"), "{out}");
+        // Inside control flow in child position too.
+        let out = expand(r#"col() { if cond { { ..items.iter().map(row) } } }"#);
+        assert!(out.contains("children (items . iter () . map (row))"), "{out}");
+    }
+
+    #[test]
+    fn spread_at_top_level_is_a_compile_error() {
+        let out = expand(r#"{ ..items }"#);
         assert!(out.contains("compile_error"), "{out}");
-        assert!(out.contains("have no"), "{out}");
+        assert!(out.contains("parent element"), "{out}");
+    }
+
+    #[test]
+    fn if_let_expands_with_multi_node_body() {
+        let out = expand(r#"col() { if let Some(m) = modal { { backdrop } { m } } }"#);
+        assert!(out.contains("if let Some (m) = modal"), "{out}");
+        assert!(out.contains("child (backdrop)"), "{out}");
+        assert!(out.contains("child (m)"), "{out}");
+    }
+
+    #[test]
+    fn else_if_let_chains() {
+        let out = expand(
+            r#"col() {
+                if let Some(e) = error { text(e) }
+                else if let Some(w) = warning { text(w) }
+                else { text("ok") }
+            }"#,
+        );
+        assert!(out.contains("if let Some (e) = error"), "{out}");
+        assert!(out.contains("else"), "{out}");
+        assert!(out.contains("if let Some (w) = warning"), "{out}");
     }
 
     #[test]
@@ -1570,6 +1677,48 @@ mod expansion_tests {
         assert!(color.contains("text_color"), "{color}");
         let size = token_to_direct_call("text_16").unwrap().to_string();
         assert!(size.contains("text_size"), "{size}");
+    }
+
+    // ── color! ─────────────────────────────────────────────────────────────────
+
+    fn expand_color(src: &str) -> String {
+        color_impl(src.parse().expect("input must tokenize")).to_string()
+    }
+
+    #[test]
+    fn color_macro_accepts_all_input_forms() {
+        // Bare hex (lexes as int-with-suffix or ident), #-prefixed, quoted,
+        // alpha forms, named colors — all produce an Hsla struct literal.
+        for src in [
+            "1c1a17",
+            "#1c1a17",
+            "\"#1c1a17\"",
+            "\"f5f0e8\"",
+            "abc",
+            "abcd",
+            "1c1a17cc",
+            "red",
+        ] {
+            let out = expand_color(src);
+            assert!(out.contains("gpui :: Hsla {"), "`{src}` → {out}");
+            assert!(!out.contains("compile_error"), "`{src}` → {out}");
+        }
+    }
+
+    #[test]
+    fn color_macro_matches_style_token_expansion() {
+        // color!(x) must be bit-identical to what bg_x embeds.
+        let standalone = expand_color("ff0000");
+        let via_token = token_to_direct_call("bg_ff0000").unwrap().to_string();
+        assert!(via_token.contains(&standalone), "{standalone} vs {via_token}");
+    }
+
+    #[test]
+    fn color_macro_rejects_non_colors() {
+        for src in ["wobble", "12", "12345", "\"\""] {
+            let out = expand_color(src);
+            assert!(out.contains("compile_error"), "`{src}` → {out}");
+        }
     }
 
     /// Dump full expansions for a fixed corpus. Run before and after a refactor

@@ -112,10 +112,8 @@ fn pane(title: &str, loc: usize, body: AnyElement, code_btn: AnyElement) -> impl
             row(items_center, justify_between, px_4) {
                 text(title.to_string(), text_sm, semibold, text_f5f0e8)
                 row(gap_8, items_center) {
-                    // Block before the text: a `{ ... }` after a text element
-                    // would parse as its children (compile error).
-                    { code_btn }
                     text(format!("{loc} lines of code"), text_xs, text_8a857c)
+                    { code_btn }
                 }
             }
             scroll(flex_1) { { body } }

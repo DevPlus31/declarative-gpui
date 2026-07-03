@@ -9,7 +9,7 @@
 //! The `#[test]`s at the bottom additionally construct the element trees at
 //! runtime (no window required), catching panics in constructors.
 
-use declarative_gpui::ui;
+use declarative_gpui::{color, ui};
 use gpui::IntoElement;
 use gpui::prelude::*;
 
@@ -152,6 +152,67 @@ pub fn control_flow(state: Option<i32>, items: Vec<String>) -> impl IntoElement 
     }
 }
 
+/// `if let` with multi-node bodies, else-if-let chains, and a `{ ... }`
+/// block directly after a leaf element (text/list) parsing as a sibling.
+pub fn if_let_and_leaf_siblings(modal: Option<String>, warning: Option<String>) -> impl IntoElement {
+    ui! {
+        col(gap_2) {
+            if let Some(m) = modal {
+                { gpui::div().child("backdrop") }
+                text(m text_sm)
+            } else if let Some(w) = warning {
+                text(w)
+            }
+            text("leaf") { gpui::div().child("sibling of the text, not a child") }
+            list(count = 3, render = |ix: usize| gpui::div().child(format!("{ix}")).into_any_element())
+            { gpui::div().child("sibling of the list") }
+        }
+    }
+}
+
+/// `color!`: compile-time `Hsla` literals are const-constructible, so theme
+/// palettes carry no per-frame conversion — a themed `bg = th.panel` is a
+/// field copy.
+pub struct Theme {
+    pub panel: gpui::Hsla,
+    pub text: gpui::Hsla,
+    pub accent: gpui::Hsla,
+}
+
+pub const LIGHT: Theme = Theme {
+    panel: color!(f5f0e8),
+    text: color!("#1c1a17"),
+    accent: color!(ff6b3580),
+};
+
+pub const DARK: Theme = Theme {
+    panel: color!(1c1a17),
+    text: color!(f5f0e8),
+    accent: color!(orange),
+};
+
+pub fn themed(dark: bool) -> impl IntoElement {
+    let th = if dark { &DARK } else { &LIGHT };
+    ui! {
+        col(bg = th.panel, text_color = th.text, border, border_color = th.accent) {
+            text("themed with zero runtime color math")
+        }
+    }
+}
+
+/// Spread `{ ..expr }`: anything `IntoIterator<Item: IntoElement>` — an
+/// `Option` (renders nothing on `None`), a heterogeneous `Vec<AnyElement>`,
+/// a mapped iterator.
+pub fn spread_children(badge: Option<String>, extras: Vec<gpui::AnyElement>) -> impl IntoElement {
+    ui! {
+        col(gap_2) {
+            { ..badge }
+            { ..extras }
+            { ..(0..3).map(|i| gpui::div().child(format!("row {i}"))) }
+        }
+    }
+}
+
 /// Escape hatches: `{ expr }` blocks, custom element constructors,
 /// key = value for arbitrary builder methods, call-style args.
 pub fn badge() -> gpui::Div {
@@ -215,6 +276,12 @@ mod tests {
         let _ = uniform_list_element();
         let _ = control_flow(Some(3), vec!["a".into(), "b".into()]);
         let _ = control_flow(None, vec![]);
+        let _ = if_let_and_leaf_siblings(Some("m".into()), None);
+        let _ = if_let_and_leaf_siblings(None, Some("w".into()));
+        let _ = spread_children(Some("new".into()), vec![badge().into_any_element()]);
+        let _ = spread_children(None, vec![]);
+        let _ = themed(true);
+        let _ = themed(false);
         let _ = escape_hatches(true);
         let _ = interactivity();
         let _ = top_level_branching(false);

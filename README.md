@@ -124,9 +124,30 @@ you'd write by hand, so there is nothing extra at runtime. Details in
 | `text(content, ...)`, `text_raw`, `label` | the content, wrapped in a styled div only when style args are present |
 | any other name | called as a constructor: `badge(...)` → `badge()` |
 
-Children go in braces; `if`/`else`, `for`, and `match` (with guards) work
-anywhere a child can appear and expand to real Rust control flow. `{ expr }`
-escapes to an arbitrary Rust expression.
+Children go in braces; `if`/`else`, `if let`, `for`, and `match` (with
+guards) work anywhere a child can appear and expand to real Rust control
+flow — branch bodies hold any number of nodes. `{ expr }` escapes to an
+arbitrary Rust expression, and `{ ..expr }` spreads any
+`IntoIterator<Item: IntoElement>` into the parent's children — an `Option`
+(renders nothing on `None`), a `Vec<AnyElement>`, or a mapped iterator:
+
+```rust
+col() {
+    { ..self.badge.clone() }                      // Option<impl IntoElement>
+    { ..items.iter().map(render_row) }            // iterator
+}
+```
+
+```rust
+if let Some(modal) = self.modal.take() {
+    { backdrop() }
+    { modal }
+}
+```
+
+Leaf elements (`text`, `text_raw`, `label`, `list`) have no children, so a
+`{ ... }` directly after one is parsed as the next sibling — no wrapper
+container needed.
 
 ## Element arguments
 
@@ -195,13 +216,43 @@ values remain available via `key = value`):
 Unknown tokens are **compile errors** ("Unknown style token"), never silently
 ignored.
 
+## Themes: `color!` and `Hsla` palettes
+
+Style-token colors are static by nature. For themed apps (light/dark), the
+same compile-time conversion is available standalone via `color!`, which
+expands to a **const-constructible `Hsla` literal**:
+
+```rust
+use declarative_gpui::{color, ui};
+use gpui::Hsla;
+
+pub struct Theme { pub panel: Hsla, pub text: Hsla, pub accent: Hsla }
+
+pub const LIGHT: Theme = Theme {
+    panel: color!(f5f0e8), text: color!(1c1a17), accent: color!("#ff6b35"),
+};
+pub const DARK: Theme = Theme {
+    panel: color!(1c1a17), text: color!(f5f0e8), accent: color!(orange),
+};
+
+fn panel(th: &Theme) -> impl IntoElement {
+    ui! { col(bg = th.panel, text_color = th.text) { text("themed") } }
+}
+```
+
+Because the palette already stores `Hsla`, a themed `bg = th.panel` is a
+plain field copy — no `rgb()` hex unpacking or RGB→HSL conversion per frame.
+Avoid storing themes as `u32` hex and converting at the call site
+(`bg = (rgb(th.panel))`); that reintroduces the per-frame color math the
+macro exists to eliminate.
+
 ## Zero runtime overhead
 
 The generated code is what a careful GPUI author would write, or better:
 
 - style tokens are direct method calls — no runtime string matching;
 - colors are compile-time `Hsla` literals — no `rgb()` unpacking or RGB→HSL
-  conversion per frame;
+  conversion per frame (and `color!` extends this to theme palettes);
 - unstyled `text(...)` emits the bare content — no wrapper div layout node;
 - `list` moves its render closure — no `Arc`, no per-frame allocation;
 - every element yields its concrete type — no `AnyElement` boxing.

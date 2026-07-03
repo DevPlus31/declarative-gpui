@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>declarative-gpui — a zero-overhead ui! macro for GPUI</title>
+<meta name="description" content="A declarative ui! macro for building GPUI element trees with Tailwind-style tokens, real Rust control flow, and zero runtime overhead.">
+<style>
+  :root {
+    --bg: #1c1a17;
+    --panel: #24221e;
+    --panel-2: #2d2b27;
+    --border: #3a372f;
+    --text: #f5f0e8;
+    --muted: #8a857c;
+    --accent: #e0b184;
+    --accent-dim: #b98d62;
+    --green: #9ec98f;
+    --blue: #8fb8c9;
+    --red: #d99a8f;
+    --purple: #b8a3d6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace; }
+
+  .container { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+    background: rgba(28, 26, 23, 0.92);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+  }
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 60px;
+  }
+  .brand { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+  .brand span { color: var(--accent); }
+  .nav-links { display: flex; gap: 22px; font-size: 0.92rem; }
+  .nav-links a { color: var(--muted); }
+  .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+  .hero { padding: 72px 0 40px; text-align: center; }
+  .hero h1 {
+    font-size: clamp(1.9rem, 4.5vw, 3rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    max-width: 780px;
+    margin: 0 auto 18px;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p.sub {
+    color: var(--muted);
+    font-size: 1.08rem;
+    max-width: 640px;
+    margin: 0 auto 30px;
+  }
+  .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 30px; }
+  .badges img { height: 20px; }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 10px 22px; border-radius: 8px;
+    font-weight: 600; font-size: 0.95rem;
+  }
+  .btn-primary { background: var(--accent); color: #1c1a17; }
+  .btn-primary:hover { background: var(--accent-dim); text-decoration: none; }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); text-decoration: none; }
+  .install {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 26px; padding: 10px 18px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.95rem;
+  }
+  .install code .p { color: var(--muted); }
+
+  pre.code {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+    overflow-x: auto;
+    text-align: left;
+    font-size: 0.88rem;
+    line-height: 1.65;
+  }
+  .hero pre.code { max-width: 720px; margin: 44px auto 0; }
+  .k  { color: var(--red); }        /* keywords */
+  .f  { color: var(--blue); }       /* functions / elements */
+  .t  { color: var(--accent); }     /* style tokens */
+  .s  { color: var(--green); }      /* strings */
+  .c  { color: var(--muted); font-style: italic; } /* comments */
+  .v  { color: var(--purple); }     /* variables / fields */
+
+  section { padding: 56px 0; border-top: 1px solid var(--border); }
+  section h2 {
+    font-size: 1.6rem; letter-spacing: -0.01em; margin-bottom: 8px;
+  }
+  section p.lead { color: var(--muted); margin-bottom: 34px; max-width: 700px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 22px;
+  }
+  .card h3 { font-size: 1.02rem; margin-bottom: 8px; color: var(--accent); }
+  .card p { color: var(--muted); font-size: 0.92rem; }
+  .card code { color: var(--text); font-size: 0.85em; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 800px) { .split { grid-template-columns: 1fr; } }
+  .split h3 { font-size: 1rem; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+
+  .shot { text-align: center; }
+  .shot img {
+    max-width: 100%; border-radius: 12px; border: 1px solid var(--border);
+  }
+  .shot figcaption { color: var(--muted); font-size: 0.88rem; margin-top: 12px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  td code { color: var(--accent); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+  .table-wrap table { margin: 0; }
+  .table-wrap th { background: var(--panel); }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 36px 0 48px;
+    color: var(--muted); font-size: 0.9rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <nav>
+      <div class="brand">declarative-<span>gpui</span></div>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#showcase">Showcase</a>
+        <a href="#reference">Reference</a>
+        <a href="https://docs.rs/declarative-gpui">docs.rs</a>
+        <a href="https://crates.io/crates/declarative-gpui">crates.io</a>
+        <a href="https://github.com/DevPlus31/declarative-gpui">GitHub</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div class="hero">
+      <h1>Declarative <em>GPUI</em>, with <em>zero</em> runtime overhead</h1>
+      <p class="sub">
+        A <code>ui!</code> macro for building GPUI element trees with Tailwind-style
+        tokens and real Rust control flow. Every token compiles directly to GPUI
+        builder calls — colors resolve to final <code>Hsla</code> values at compile
+        time, faster than typical hand-written GPUI.
+      </p>
+      <div class="badges">
+        <a href="https://crates.io/crates/declarative-gpui"><img src="https://img.shields.io/crates/v/declarative-gpui.svg" alt="crates.io version"></a>
+        <a href="https://docs.rs/declarative-gpui"><img src="https://docs.rs/declarative-gpui/badge.svg" alt="docs.rs"></a>
+        <a href="https://github.com/DevPlus31/declarative-gpui/actions/workflows/ci.yml"><img src="https://github.com/DevPlus31/declarative-gpui/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+        <img src="https://img.shields.io/crates/l/declarative-gpui.svg" alt="license">
+      </div>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/DevPlus31/declarative-gpui#getting-started">Get started</a>
+        <a class="btn btn-ghost" href="https://github.com/DevPlus31/declarative-gpui">View source</a>
+      </div>
+      <div class="install"><code><span class="p">$</span> cargo add declarative-gpui</code></div>
+
+<pre class="code"><code><span class="k">fn</span> <span class="f">render</span>(items: &amp;[Item], modal: <span class="f">Option</span>&lt;Modal&gt;) -&gt; <span class="k">impl</span> IntoElement {
+    <span class="f">ui!</span> {
+        <span class="f">col</span>(<span class="t">gap_4 p_16 bg_1c1a17 rounded_lg shadow_md</span>) {
+            <span class="f">row</span>(<span class="t">items_center justify_between</span>) {
+                <span class="f">text</span>(<span class="s">"Inbox"</span> <span class="t">text_lg semibold text_f5f0e8</span>)
+                { <span class="c">..</span><span class="v">badge</span> }                      <span class="c">// Option → renders nothing on None</span>
+            }
+            <span class="k">for</span> item <span class="k">in</span> items {
+                <span class="f">row</span>(<span class="t">gap_2 px_8 py_2</span> <span class="v">on_hover</span> = |_, _, _| {}) {
+                    <span class="f">text</span>(&amp;item.title <span class="t">text_sm</span>)
+                }
+            }
+            <span class="k">if let</span> <span class="f">Some</span>(m) = modal {
+                { <span class="v">backdrop</span>() }
+                { m }
+            }
+        }
+    }
+}</code></pre>
+    </div>
+  </div>
+
+  <div class="container">
+    <section id="features">
+      <h2>The generated code is what a careful GPUI author would write — or better</h2>
+      <p class="lead">Guarantees pinned by tests, not promises.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Compile-time colors</h3>
+          <p><code>bg_1c1a17</code> emits a precomputed <code>Hsla</code> literal — no <code>rgb()</code> hex unpacking or RGB→HSL conversion per frame. Named colors and 3/4/6/8-digit hex with alpha.</p>
+        </div>
+        <div class="card">
+          <h3>Const theme palettes</h3>
+          <p><code>color!(1c1a17)</code> exposes the same conversion standalone: build <code>const</code> light/dark <code>Hsla</code> palettes, and a themed <code>bg = th.panel</code> is a plain field copy.</p>
+        </div>
+        <div class="card">
+          <h3>Real Rust control flow</h3>
+          <p><code>if</code> / <code>if let</code> / <code>for</code> / <code>match</code> (with guards) work anywhere a child can appear and expand to actual Rust — multi-node branch bodies included.</p>
+        </div>
+        <div class="card">
+          <h3>Spread children</h3>
+          <p><code>{ ..expr }</code> spreads any <code>IntoIterator</code> of elements into the parent: an <code>Option</code>, a <code>Vec&lt;AnyElement&gt;</code>, or a mapped iterator.</p>
+        </div>
+        <div class="card">
+          <h3>No hidden costs</h3>
+          <p>Unstyled <code>text(...)</code> emits bare content (no wrapper div). <code>list</code> moves its render closure — no <code>Arc</code>. Every element yields its concrete type — no boxing.</p>
+        </div>
+        <div class="card">
+          <h3>Errors, not surprises</h3>
+          <p>Unknown style tokens are compile errors, never silently ignored. Style tokens are direct method calls — no runtime string matching anywhere.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="showcase">
+      <h2>Code → pixels</h2>
+      <p class="lead">
+        47 lines of <code>ui!</code> render this card — pixel-identical to the
+        165-line hand-written GPUI version. <strong>72% less code.</strong>
+      </p>
+      <div class="split">
+        <div>
+          <h3>ui! (47 lines)</h3>
+<pre class="code"><code><span class="f">ui!</span> {
+    <span class="f">col</span>(<span class="t">gap_4 p_16 bg_1c1a17 rounded_lg</span>) {
+        <span class="f">row</span>(<span class="t">items_center justify_between</span>) {
+            <span class="f">text</span>(<span class="s">"Team Inbox"</span> <span class="t">text_lg semibold</span>)
+            <span class="f">text</span>(<span class="s">"3 new"</span> <span class="t">text_xs text_8a857c</span>)
+        }
+        <span class="k">for</span> item <span class="k">in</span> items {
+            <span class="f">row</span>(<span class="t">gap_2 px_8 py_2 rounded_md</span>
+                <span class="v">on_hover</span> = hover_handler) {
+                <span class="f">text</span>(&amp;item.title <span class="t">text_sm</span>)
+            }
+        }
+    }
+}</code></pre>
+        </div>
+        <div>
+          <h3>Rendered result</h3>
+          <figure class="shot">
+            <img src="https://raw.githubusercontent.com/DevPlus31/declarative-gpui/main/examples/screenshots/card.png" alt="Team Inbox card rendered by the 47-line dsl.rs" width="480">
+          </figure>
+        </div>
+      </div>
+      <figure class="shot" style="margin-top: 40px;">
+        <img src="https://raw.githubusercontent.com/DevPlus31/declarative-gpui/main/examples/screenshots/showcase.png" alt="side-by-side showcase: hand-written GPUI (left) vs ui! (right)">
+        <figcaption>
+          The showcase app renders both implementations side by side —
+          <code>cargo run -p declarative-gpui-examples --release</code>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section id="reference">
+      <h2>Elements at a glance</h2>
+      <p class="lead">
+        Built-in containers expand to flex-configured divs; any other name is
+        called as a constructor, so your own components drop straight in.
+        Full style-token reference in the
+        <a href="https://github.com/DevPlus31/declarative-gpui#style-token-reference">README</a>.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Element</th><th>Expands to</th></tr>
+          <tr><td><code>row(...)</code></td><td><code>gpui::div().flex().flex_row()</code></td></tr>
+          <tr><td><code>col(...)</code>, <code>card(...)</code></td><td><code>gpui::div().flex().flex_col()</code></td></tr>
+          <tr><td><code>center(...)</code></td><td>flex row, items + justify centered</td></tr>
+          <tr><td><code>scroll(...)</code></td><td>stateful div, stable auto ID + <code>overflow_y_scroll()</code></td></tr>
+          <tr><td><code>list(id, count, render)</code></td><td><code>gpui::uniform_list(...)</code> — closure moved, no Arc</td></tr>
+          <tr><td><code>text(content, ...)</code></td><td>bare content; styled wrapper only when styles present</td></tr>
+          <tr><td><code>badge(...)</code> <em style="color:var(--muted)">(any name)</em></td><td><code>badge()</code> — your constructor</td></tr>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <p>
+      <a href="https://github.com/DevPlus31/declarative-gpui">declarative-gpui</a>
+      · dual-licensed <a href="https://github.com/DevPlus31/declarative-gpui/blob/main/LICENSE-MIT">MIT</a> /
+      <a href="https://github.com/DevPlus31/declarative-gpui/blob/main/LICENSE-APACHE">Apache-2.0</a>
+      · MSRV 1.88 · built for <a href="https://www.gpui.rs/">GPUI</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

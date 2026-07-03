@@ -11,8 +11,8 @@ use proc_macro::TokenStream;
 /// Build a GPUI element tree declaratively.
 ///
 /// Elements take style tokens, `key = value` builder calls, and call-style
-/// args; children go in braces, and `if`/`for`/`match` expand to real Rust
-/// control flow. See the crate README for the full token reference.
+/// args; children go in braces, and `if`/`if let`/`for`/`match` expand to
+/// real Rust control flow. See the crate README for the full token reference.
 ///
 /// ```ignore
 /// use declarative_gpui::ui;
@@ -30,4 +30,25 @@ use proc_macro::TokenStream;
 #[proc_macro]
 pub fn ui(input: TokenStream) -> TokenStream {
     declarative_gpui_core::ui_impl(input.into()).into()
+}
+
+/// Convert a color to a `gpui::Hsla` literal at compile time — the same
+/// conversion the `ui!` style tokens use, exposed standalone so theme
+/// palettes can be `const`. Accepts 3/4/6/8-digit hex (optional leading `#`,
+/// optionally quoted) or a named color.
+///
+/// ```ignore
+/// use declarative_gpui::color;
+/// use gpui::Hsla;
+///
+/// struct Theme { panel: Hsla, text: Hsla }
+/// const DARK: Theme = Theme { panel: color!(1c1a17), text: color!("#f5f0e8") };
+/// ```
+///
+/// Storing theme tokens as `Hsla` (rather than hex `u32`s converted through
+/// `rgb()` per frame) makes a themed `bg = (th.panel)` a plain field copy —
+/// zero color math at render time.
+#[proc_macro]
+pub fn color(input: TokenStream) -> TokenStream {
+    declarative_gpui_core::color_impl(input.into()).into()
 }
