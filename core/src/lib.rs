@@ -1698,7 +1698,10 @@ mod expansion_tests {
         assert!(out.contains(". id ("), "auto id for on_click: {out}");
         // overflow scroll tokens need a stateful element.
         let out = expand(r#"div(overflow_x_scroll w_128) {}"#);
-        assert!(out.contains(". id ("), "auto id for overflow_x_scroll: {out}");
+        assert!(
+            out.contains(". id ("),
+            "auto id for overflow_x_scroll: {out}"
+        );
         // Call-style stateful style refinement.
         let out = expand(r#"div(active(|s| s)) {}"#);
         assert!(out.contains(". id ("), "auto id for active(): {out}");
@@ -1722,7 +1725,10 @@ mod expansion_tests {
     #[test]
     fn when_closure_form_passes_through() {
         let out = expand(r#"div(when(show, |el| el.opacity(0.5))) {}"#);
-        assert!(out.contains("when (show , | el | el . opacity (0.5))"), "{out}");
+        assert!(
+            out.contains("when (show , | el | el . opacity (0.5))"),
+            "{out}"
+        );
         // Bare non-token path stays a callback, not a token.
         let out = expand(r#"div(when(show, my_modifier)) {}"#);
         assert!(out.contains("when (show , my_modifier)"), "{out}");
@@ -1804,7 +1810,10 @@ mod expansion_tests {
         assert!(out.contains("children (maybe_badge)"), "{out}");
         // Inside control flow in child position too.
         let out = expand(r#"col() { if cond { { ..items.iter().map(row) } } }"#);
-        assert!(out.contains("children (items . iter () . map (row))"), "{out}");
+        assert!(
+            out.contains("children (items . iter () . map (row))"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -1891,7 +1900,10 @@ mod expansion_tests {
         // color!(x) must be bit-identical to what bg_x embeds.
         let standalone = expand_color("ff0000");
         let via_token = token_to_direct_call("bg_ff0000").unwrap().to_string();
-        assert!(via_token.contains(&standalone), "{standalone} vs {via_token}");
+        assert!(
+            via_token.contains(&standalone),
+            "{standalone} vs {via_token}"
+        );
     }
 
     #[test]

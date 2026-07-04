@@ -154,7 +154,10 @@ pub fn control_flow(state: Option<i32>, items: Vec<String>) -> impl IntoElement 
 
 /// `if let` with multi-node bodies, else-if-let chains, and a `{ ... }`
 /// block directly after a leaf element (text/list) parsing as a sibling.
-pub fn if_let_and_leaf_siblings(modal: Option<String>, warning: Option<String>) -> impl IntoElement {
+pub fn if_let_and_leaf_siblings(
+    modal: Option<String>,
+    warning: Option<String>,
+) -> impl IntoElement {
     ui! {
         col(gap_2) {
             if let Some(m) = modal {
@@ -312,7 +315,10 @@ mod tests {
         const PREVIEW: &str = ui_expand! { row(px_8 bg_1c1a17) { text("hi") } };
         assert!(PREVIEW.contains("gpui::div()"), "{PREVIEW}");
         assert!(PREVIEW.contains("Hsla"), "{PREVIEW}");
-        assert!(PREVIEW.contains('\n'), "should be pretty-printed: {PREVIEW}");
+        assert!(
+            PREVIEW.contains('\n'),
+            "should be pretty-printed: {PREVIEW}"
+        );
         let _ = escape_hatches(true);
         let _ = interactivity();
         let _ = top_level_branching(false);
