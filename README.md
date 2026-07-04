@@ -49,7 +49,7 @@ repository (this macro's token tables are verified against zed rev
 
 ```toml
 [dependencies]
-declarative-gpui = "0.1"
+declarative-gpui = "0.2"
 gpui = "0.2"
 # or the rev this crate is verified against:
 # gpui = { git = "https://github.com/zed-industries/zed", rev = "bb48a42983f2a4bb9ac9d31c63abe02497088f67" }
@@ -161,11 +161,31 @@ Three forms, in any mix (commas between args are optional but **recommended**
 - **Call-style** — `hover(|s| s.opacity(0.8))`, `when(cond, |el| …)` become
   `.hover(…)`, `.when(…)`.
 
-Elements using `on_hover`, `on_drag`, `tooltip`, or `hoverable_tooltip`
-automatically get a stable `.id()` (from `file!:line!:column!`) so they are
-`Stateful<Div>`. An explicit `id = …` is folded into the constructor instead.
-Argument order matters for type-changing methods: put `id = …` before
-`on_click` / `overflow_x_scroll` on plain `div`s.
+### Conditional style tokens
+
+`when(cond, <args>)` with style tokens (or `key = value` / call-style args)
+after the condition expands them inside a `.when()` closure — conditional
+styling without giving up compile-time tokens, colors included:
+
+```rust
+row(px_4, when(dark, bg_1c1a17, text_f5f0e8, rounded_lg))
+row(when(dark, bg = th.panel))          // key = value works too
+```
+
+`when(cond, |el| …)` with a closure still passes through to GPUI's
+`FluentBuilder::when` unchanged, and a bare path that isn't a style token
+(`when(cond, my_modifier)`) is treated as a callback.
+
+### Stateful elements
+
+Elements using a method that requires `Stateful<Div>` — `on_click`,
+`on_hover`, `on_drag`, `tooltip`, `hoverable_tooltip`, `active`,
+`group_active`, `track_scroll`, `anchor_scroll`, or the
+`overflow(_x/_y)_scroll` tokens — automatically get a stable `.id()` (from
+`file!:line!:column!`), so `div(on_click = …)` just works. An explicit
+`id = …` is folded into the constructor instead. On *custom* constructors
+(unknown element names) nothing is injected — there, put `id = …` before
+type-changing methods yourself.
 
 ## Style token reference
 
@@ -257,7 +277,14 @@ The generated code is what a careful GPUI author would write, or better:
 - `list` moves its render closure — no `Arc`, no per-frame allocation;
 - every element yields its concrete type — no `AnyElement` boxing.
 
-These guarantees are pinned by tests in `core`.
+These guarantees are pinned by tests in `core` — and you can inspect any
+invocation yourself with `ui_expand!`, which returns the pretty-printed
+generated code as a `&'static str` (a per-invocation `cargo expand`, no
+nightly needed):
+
+```rust
+println!("{}", ui_expand! { row(px_8 bg_1c1a17) { text("hi") } });
+```
 
 ## GPUI compatibility
 

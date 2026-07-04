@@ -9,7 +9,7 @@
 //! The `#[test]`s at the bottom additionally construct the element trees at
 //! runtime (no window required), catching panics in constructors.
 
-use declarative_gpui::{color, ui};
+use declarative_gpui::{color, ui, ui_expand};
 use gpui::IntoElement;
 use gpui::prelude::*;
 
@@ -232,16 +232,36 @@ pub fn escape_hatches(show: bool) -> impl IntoElement {
 }
 
 /// Event handlers: mouse-button defaulting, stateful auto-ID injection for
-/// on_hover, explicit id + on_click ordering, hover style refinement.
+/// on_hover / on_click / active / overflow tokens, explicit id folding,
+/// hover style refinement.
 pub fn interactivity() -> impl IntoElement {
     ui! {
         col() {
             div(on_mouse_down = |_event, _window, _cx| {}) { text("left click") }
             row(on_hover = |_hovered, _window, _cx| {}) { text("auto stateful id") }
             div(id = "btn" on_click = |_event, _window, _cx| {} cursor_pointer) {
-                text("button")
+                text("explicit id folded into constructor")
             }
+            div(on_click = |_event, _window, _cx| {}) { text("auto stateful id for click") }
+            div(active(|s| s.opacity(0.9)) w_64) { text("active refinement") }
+            div(overflow_x_scroll w_128) { text("overflow token auto id") }
             div(hover(|s| s.opacity(0.8)) group("g")) { text("hover style") }
+        }
+    }
+}
+
+/// Conditional style tokens: `when(cond, <tokens>)` expands the trailing
+/// args inside a `.when()` closure — compile-time colors survive
+/// conditional (e.g. theme-dependent) styling.
+pub fn conditional_tokens(dark: bool) -> impl IntoElement {
+    let th = if dark { &DARK } else { &LIGHT };
+    ui! {
+        col(px_4, when(dark, bg_1c1a17, text_f5f0e8, rounded_lg)) {
+            text("token form")
+            div(when(dark, bg = th.panel, hover(|s| s.opacity(0.9)))) {
+                text("key = value and call-style inside when")
+            }
+            div(when(dark, |el| el.opacity(0.5))) { text("closure passthrough") }
         }
     }
 }
@@ -282,6 +302,17 @@ mod tests {
         let _ = spread_children(None, vec![]);
         let _ = themed(true);
         let _ = themed(false);
+        let _ = conditional_tokens(true);
+        let _ = conditional_tokens(false);
+    }
+
+    /// `ui_expand!` yields the generated builder code as a string constant.
+    #[test]
+    fn ui_expand_previews_generated_code() {
+        const PREVIEW: &str = ui_expand! { row(px_8 bg_1c1a17) { text("hi") } };
+        assert!(PREVIEW.contains("gpui::div()"), "{PREVIEW}");
+        assert!(PREVIEW.contains("Hsla"), "{PREVIEW}");
+        assert!(PREVIEW.contains('\n'), "should be pretty-printed: {PREVIEW}");
         let _ = escape_hatches(true);
         let _ = interactivity();
         let _ = top_level_branching(false);

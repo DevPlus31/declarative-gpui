@@ -52,3 +52,16 @@ pub fn ui(input: TokenStream) -> TokenStream {
 pub fn color(input: TokenStream) -> TokenStream {
     declarative_gpui_core::color_impl(input.into()).into()
 }
+
+/// Like [`ui!`], but instead of building the element tree, expand to a
+/// `&'static str` of the pretty-printed GPUI builder code the same input
+/// generates — `cargo expand` scoped to one invocation, with no nightly or
+/// extra tooling.
+///
+/// ```ignore
+/// println!("{}", ui_expand! { row(px_8 bg_1c1a17) { text("hi") } });
+/// ```
+#[proc_macro]
+pub fn ui_expand(input: TokenStream) -> TokenStream {
+    declarative_gpui_core::ui_expand_impl(input.into()).into()
+}

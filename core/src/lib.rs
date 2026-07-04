@@ -22,6 +22,32 @@ pub fn ui_impl(input: TokenStream2) -> TokenStream2 {
     out
 }
 
+/// Expand the contents of a `ui_expand!( ... )` invocation: run the normal
+/// `ui!` expansion, pretty-print the generated GPUI builder code, and return
+/// it as a `&'static str` literal — a debugging/teaching aid to see exactly
+/// what the macro emits (the moral equivalent of `cargo expand` scoped to
+/// one invocation).
+pub fn ui_expand_impl(input: TokenStream2) -> TokenStream2 {
+    let expanded = ui_impl(input);
+    // Wrap in a fn so prettyplease (which formats whole files) accepts it,
+    // then strip the wrapper. Fall back to the raw token string for shapes
+    // that don't parse as statements (e.g. multiple bare expressions).
+    let pretty = match syn::parse2::<syn::File>(quote! { fn __ui_expand() { #expanded } }) {
+        Ok(file) => {
+            let s = prettyplease::unparse(&file);
+            s.lines()
+                .skip(1) // "fn __ui_expand() {"
+                .take_while(|l| *l != "}")
+                .map(|l| l.strip_prefix("    ").unwrap_or(l))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        Err(_) => expanded.to_string(),
+    };
+    let lit = proc_macro2::Literal::string(&pretty);
+    quote! { #lit }
+}
+
 /// Expand the contents of a `color!( ... )` invocation into a `gpui::Hsla`
 /// struct literal — the same compile-time RGB→HSL conversion the style
 /// tokens use, exposed standalone so theme palettes can be `const`. Accepts
@@ -375,6 +401,27 @@ impl Parse for Element {
     }
 }
 
+/// GPUI methods defined on `StatefulInteractiveElement` — they only exist
+/// once the element has an ID (Div → Stateful<Div>). Seeing one on a known
+/// div-backed container triggers automatic `.id()` injection.
+fn requires_stateful(name: &str) -> bool {
+    matches!(
+        name,
+        "on_click"
+            | "on_hover"
+            | "on_drag"
+            | "tooltip"
+            | "hoverable_tooltip"
+            | "active"
+            | "group_active"
+            | "track_scroll"
+            | "anchor_scroll"
+            | "overflow_scroll"
+            | "overflow_x_scroll"
+            | "overflow_y_scroll"
+    )
+}
+
 /// Emit the `let __el = __el...;` rebinding statement(s) for one element
 /// argument. Rebinding (not reassignment) lets type-changing builder methods
 /// like `.id()` (Div → Stateful<Div>) work mid-chain. Shared by every element
@@ -403,6 +450,12 @@ fn arg_stmt(arg: &Arg) -> TokenStream2 {
                     .to_compile_error(),
             }
         }
+        // `when(cond, <tokens>)` → `.when(cond, |__el| { ...; __el })` with
+        // the trailing args expanded exactly like element args (style tokens,
+        // `key = value`, call-style) — conditional styling without giving up
+        // compile-time tokens. `when(cond, |el| ...)` still passes through
+        // to GPUI's FluentBuilder below.
+        Arg::Expr(syn::Expr::Call(call)) if when_token_form(call) => when_stmt(call),
         // `method(args)` → `__el.method(args)`
         Arg::Expr(syn::Expr::Call(call)) => {
             let func = &call.func;
@@ -424,6 +477,61 @@ fn arg_stmt(arg: &Arg) -> TokenStream2 {
         )
         .to_compile_error(),
     }
+}
+
+/// Is this `when(...)` call the conditional-token form (trailing args to be
+/// applied to the element) rather than GPUI's raw `.when(cond, closure)`?
+///
+/// GPUI's `when` takes exactly (bool, closure), so three or more args are
+/// always the token form. With exactly two, a closure literal — or a bare
+/// path that is *not* a style token (a function-item callback) — passes
+/// through; a style token, `key = value`, or method call is the token form.
+fn when_token_form(call: &syn::ExprCall) -> bool {
+    let is_when = matches!(&*call.func, syn::Expr::Path(p) if p.path.is_ident("when"));
+    if !is_when || call.args.len() < 2 {
+        return false;
+    }
+    if call.args.len() > 2 {
+        return true;
+    }
+    match &call.args[1] {
+        syn::Expr::Closure(_) => false,
+        syn::Expr::Path(p) => p
+            .path
+            .get_ident()
+            .is_some_and(|i| token_to_direct_call(&i.to_string()).is_some()),
+        _ => true,
+    }
+}
+
+/// Expand the conditional-token form of `when`. Trailing args reuse
+/// `arg_stmt`, so everything valid in element-arg position is valid here —
+/// including nested `when`s. Style tokens keep their compile-time expansion
+/// (colors stay precomputed `Hsla` literals inside the branch).
+fn when_stmt(call: &syn::ExprCall) -> TokenStream2 {
+    let cond = &call.args[0];
+    let mut body = TokenStream2::new();
+    for expr in call.args.iter().skip(1) {
+        // `bg = value` parses as an assignment expression in call position;
+        // map it back to the `key = value` arg form.
+        let arg = if let syn::Expr::Assign(assign) = expr {
+            if let syn::Expr::Path(p) = &*assign.left
+                && let Some(key) = p.path.get_ident()
+            {
+                Arg::KeyValue(key.clone(), (*assign.right).clone())
+            } else {
+                return syn::Error::new_spanned(
+                    &assign.left,
+                    "expected a method name on the left of `=` inside `when(...)`",
+                )
+                .to_compile_error();
+            }
+        } else {
+            Arg::Expr(expr.clone())
+        };
+        body.extend(arg_stmt(&arg));
+    }
+    quote! { let __el = __el.when(#cond, |__el| { #body __el }); }
 }
 
 /// Emit an element as a block expression, appending to `out`. Args, styles,
@@ -539,11 +647,11 @@ fn emit_element(out: &mut TokenStream2, el: &Element) {
 
     // Some API methods require a Stateful<Div> (i.e. the element must have
     // an element ID so GPUI can persist per-element state across frames).
-    // Affected: on_hover, on_drag, tooltip, hoverable_tooltip. When any of
-    // those keys appear on a known div-backed container we inject .id()
-    // into the constructor so the type is already Stateful<Div> when we
-    // apply the handler. `id_consumed` tracks whether an explicit `id =`
-    // arg was folded into the constructor (so the args loop must skip it).
+    // When any of those appear on a known div-backed container — as a
+    // `key = value` arg, a call-style arg, or a bare token — we inject
+    // .id() into the constructor so the type is already Stateful<Div> when
+    // we apply it. `id_consumed` tracks whether an explicit `id =` arg was
+    // folded into the constructor (so the args loop must skip it).
     let auto_id = || quote! { concat!(file!(), ":", line!(), ":", column!()) };
     let (constructor, id_consumed) = if name_str == "scroll" {
         let id = explicit_id_val
@@ -554,15 +662,22 @@ fn emit_element(out: &mut TokenStream2, el: &Element) {
             explicit_id_val.is_some(),
         )
     } else if let Some(base) = known_base {
-        let needs_stateful = el.args.iter().any(|a| {
-            if let Arg::KeyValue(k, _) = a {
-                matches!(
-                    k.to_string().as_str(),
-                    "on_hover" | "on_drag" | "tooltip" | "hoverable_tooltip"
-                )
-            } else {
-                false
+        let needs_stateful = el.args.iter().any(|a| match a {
+            Arg::KeyValue(k, _) => requires_stateful(&k.to_string()),
+            Arg::Expr(syn::Expr::Path(p)) => p
+                .path
+                .get_ident()
+                .is_some_and(|i| requires_stateful(&i.to_string())),
+            Arg::Expr(syn::Expr::Call(c)) => {
+                if let syn::Expr::Path(p) = &*c.func {
+                    p.path
+                        .get_ident()
+                        .is_some_and(|i| requires_stateful(&i.to_string()))
+                } else {
+                    false
+                }
             }
+            _ => false,
         });
         if needs_stateful {
             let id = explicit_id_val
@@ -1523,13 +1638,24 @@ mod expansion_tests {
     fn args_rebind_so_id_can_change_the_element_type() {
         // Regression (found by the GPUI integration crate): `.id()` turns Div
         // into Stateful<Div>. With `__el = __el.id(..)` reassignment that was
-        // a type error, so `div(id = "x", on_click = h)` never compiled.
-        // Args must rebind; children then mutate a single binding.
-        let out = expand(r#"div(id = "x" on_click = h) { text("y") }"#);
+        // a type error. Args must rebind; children then mutate a single
+        // binding. (Stateful-requiring args like on_click now fold the id
+        // into the constructor instead — covered by the stateful_id tests —
+        // so the mid-chain rebind is exercised with a plain id here.)
+        let out = expand(r#"div(id = "x" cursor_pointer) { text("y") }"#);
         assert!(out.contains(r#"let __el = __el . id ("x")"#), "{out}");
-        assert!(out.contains("let __el = __el . on_click (h)"), "{out}");
+        assert!(out.contains("let __el = __el . cursor_pointer ()"), "{out}");
         assert!(out.contains("let mut __el = __el ;"), "{out}");
         assert!(out.contains("__el = __el . child"), "{out}");
+    }
+
+    #[test]
+    fn explicit_id_folds_into_constructor_with_on_click() {
+        let out = expand(r#"div(id = "x" on_click = h) { text("y") }"#);
+        assert!(out.contains(r#". id ("x")"#), "{out}");
+        // Folded once — not also rebound in the args.
+        assert!(!out.contains(r#"let __el = __el . id"#), "{out}");
+        assert!(out.contains("let __el = __el . on_click (h)"), "{out}");
     }
 
     #[test]
@@ -1563,6 +1689,61 @@ mod expansion_tests {
     fn stateful_id_injected_for_hover() {
         let out = expand(r#"div(on_hover = handler) {}"#);
         assert!(out.contains(". id ("), "auto id for on_hover: {out}");
+    }
+
+    #[test]
+    fn stateful_id_injected_for_click_tokens_and_call_style() {
+        // on_click (key = value) — the old README footgun.
+        let out = expand(r#"div(on_click = handler) {}"#);
+        assert!(out.contains(". id ("), "auto id for on_click: {out}");
+        // overflow scroll tokens need a stateful element.
+        let out = expand(r#"div(overflow_x_scroll w_128) {}"#);
+        assert!(out.contains(". id ("), "auto id for overflow_x_scroll: {out}");
+        // Call-style stateful style refinement.
+        let out = expand(r#"div(active(|s| s)) {}"#);
+        assert!(out.contains(". id ("), "auto id for active(): {out}");
+        // Plain styling must NOT inject an id.
+        let out = expand(r#"div(px_4 hover(|s| s)) {}"#);
+        assert!(!out.contains(". id ("), "no id for plain styling: {out}");
+    }
+
+    #[test]
+    fn when_with_tokens_expands_inside_closure() {
+        let out = expand(r#"div(when(dark, bg_1c1a17, text_f5f0e8)) {}"#);
+        assert!(out.contains("when (dark , | __el |"), "{out}");
+        assert!(out.contains("bg (gpui :: Hsla {"), "{out}");
+        assert!(out.contains("text_color (gpui :: Hsla {"), "{out}");
+        // key = value and call-style work inside when too.
+        let out = expand(r#"div(when(dark, bg = th.panel, hover(|s| s))) {}"#);
+        assert!(out.contains("bg (th . panel)"), "{out}");
+        assert!(out.contains("hover (| s | s)"), "{out}");
+    }
+
+    #[test]
+    fn when_closure_form_passes_through() {
+        let out = expand(r#"div(when(show, |el| el.opacity(0.5))) {}"#);
+        assert!(out.contains("when (show , | el | el . opacity (0.5))"), "{out}");
+        // Bare non-token path stays a callback, not a token.
+        let out = expand(r#"div(when(show, my_modifier)) {}"#);
+        assert!(out.contains("when (show , my_modifier)"), "{out}");
+    }
+
+    #[test]
+    fn when_token_form_rejects_unknown_tokens() {
+        let out = expand(r#"div(when(dark, bg_red, wobble_9)) {}"#);
+        assert!(out.contains("Unknown style token"), "{out}");
+    }
+
+    #[test]
+    fn ui_expand_returns_pretty_source_literal() {
+        let out = ui_expand_impl(r#"row(px_8) { text("hi") }"#.parse().unwrap()).to_string();
+        // It's a string literal, not element-building code.
+        assert!(out.starts_with('"'), "{out}");
+        assert!(out.contains("let __el"), "{out}");
+        assert!(out.contains("px"), "{out}");
+        // Pretty-printed: multi-line, wrapper fn stripped.
+        assert!(out.contains("\\n"), "{out}");
+        assert!(!out.contains("__ui_expand"), "{out}");
     }
 
     #[test]

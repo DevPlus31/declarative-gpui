@@ -1201,7 +1201,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "declarative-gpui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "declarative-gpui-core",
  "proc-macro2",
@@ -1209,8 +1209,9 @@ dependencies = [
 
 [[package]]
 name = "declarative-gpui-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "prettyplease",
  "proc-macro2",
  "quote",
  "syn",

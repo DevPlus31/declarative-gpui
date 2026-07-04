@@ -8,7 +8,7 @@ default-members = [".", "core"]
 
 [package]
 name = "declarative-gpui"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Mustapha BENCHOUK <devplus31@gmail.com>"]
 rust-version = "1.88" # let-chains (stabilized 1.88) are used throughout
@@ -29,5 +29,5 @@ autoexamples = false
 proc-macro = true
 
 [dependencies]
-declarative-gpui-core = { path = "core", version = "0.1.0" }
+declarative-gpui-core = { path = "core", version = "0.2.0" }
 proc-macro2 = "1.0"

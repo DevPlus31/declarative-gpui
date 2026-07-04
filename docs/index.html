@@ -229,12 +229,20 @@
           <p><code>{ ..expr }</code> spreads any <code>IntoIterator</code> of elements into the parent: an <code>Option</code>, a <code>Vec&lt;AnyElement&gt;</code>, or a mapped iterator.</p>
         </div>
         <div class="card">
+          <h3>Conditional tokens</h3>
+          <p><code>when(dark, bg_1c1a17, text_f5f0e8)</code> expands style tokens inside a <code>.when()</code> closure — conditional and theme-dependent styling without giving up compile-time colors.</p>
+        </div>
+        <div class="card">
+          <h3>Stateful, automatically</h3>
+          <p><code>on_click</code>, <code>active</code>, <code>tooltip</code>, scroll tokens — anything needing <code>Stateful&lt;Div&gt;</code> gets a stable auto-ID injected. No ordering footguns.</p>
+        </div>
+        <div class="card">
           <h3>No hidden costs</h3>
           <p>Unstyled <code>text(...)</code> emits bare content (no wrapper div). <code>list</code> moves its render closure — no <code>Arc</code>. Every element yields its concrete type — no boxing.</p>
         </div>
         <div class="card">
-          <h3>Errors, not surprises</h3>
-          <p>Unknown style tokens are compile errors, never silently ignored. Style tokens are direct method calls — no runtime string matching anywhere.</p>
+          <h3>See for yourself</h3>
+          <p>Unknown style tokens are compile errors, never silently ignored. And <code>ui_expand!</code> returns the generated builder code as a string — a per-invocation <code>cargo expand</code>.</p>
         </div>
       </div>
     </section>
