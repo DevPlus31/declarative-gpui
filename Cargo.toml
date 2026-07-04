@@ -15,6 +15,7 @@ rust-version = "1.88" # let-chains (stabilized 1.88) are used throughout
 description = "Declarative ui! macro for building GPUI element trees with Tailwind-style tokens at zero runtime cost"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
+homepage = "https://devplus31.github.io/declarative-gpui/"
 repository = "https://github.com/DevPlus31/declarative-gpui"
 keywords = ["gpui", "ui", "dsl", "declarative", "macro"]
 categories = ["gui", "development-tools::procedural-macro-helpers"]
