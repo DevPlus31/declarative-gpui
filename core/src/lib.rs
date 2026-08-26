@@ -332,7 +332,10 @@ fn emit_nodes(out: &mut TokenStream2, nodes: &[UiNode], ctx: Ctx) {
 }
 
 struct Element {
-    name: Ident,
+    /// A bare name (`row`, `badge`) or a path constructor (`Button::new`).
+    /// Only single-ident heads participate in the built-in name table;
+    /// multi-segment paths are always custom constructors.
+    head: syn::Path,
     args: Vec<Arg>,
     children: Vec<UiNode>,
 }
@@ -357,7 +360,7 @@ impl Parse for Arg {
 
 impl Parse for Element {
     fn parse(input: ParseStream) -> Result<Self> {
-        let name: Ident = input.parse()?;
+        let head: syn::Path = input.parse()?;
 
         let mut args = Vec::new();
         if input.peek(syn::token::Paren) {
@@ -379,10 +382,12 @@ impl Parse for Element {
         // `{ ... }` after one is unambiguous: it can only belong to the
         // enclosing node list. Leave it unconsumed and it parses as the
         // next sibling — no wrapper container needed.
-        let is_leaf = matches!(
-            name.to_string().as_str(),
-            "text" | "text_raw" | "label" | "list"
-        );
+        let is_leaf = head.get_ident().is_some_and(|name| {
+            matches!(
+                name.to_string().as_str(),
+                "text" | "text_raw" | "label" | "list"
+            )
+        });
 
         let mut children = Vec::new();
         if !is_leaf && input.peek(syn::token::Brace) {
@@ -394,7 +399,7 @@ impl Parse for Element {
         }
 
         Ok(Element {
-            name,
+            head,
             args,
             children,
         })
@@ -420,6 +425,30 @@ fn requires_stateful(name: &str) -> bool {
             | "overflow_x_scroll"
             | "overflow_y_scroll"
     )
+}
+
+/// Would this argument be applied to the element as a builder call — a style
+/// token, `key = value`, or call-style method? On custom constructors, the
+/// leading run of args that are NOT builder args is passed to the constructor
+/// itself: `Button::new("ok", label("Go"))` → `Button::new("ok").label("Go")`.
+///
+/// The boundary cases: a bare ident is a builder arg only when it maps to a
+/// style token (an unknown ident in leading position is a constructor arg —
+/// a variable, a unit variant); a call is a builder arg only with a
+/// bare-ident callee (`Thing::default()` is a constructor arg); a method
+/// call (`self.state.clone()`) is a constructor arg.
+fn is_builder_arg(arg: &Arg) -> bool {
+    match arg {
+        Arg::KeyValue(..) => true,
+        Arg::Expr(syn::Expr::Path(p)) => p
+            .path
+            .get_ident()
+            .is_some_and(|i| token_to_direct_call(&i.to_string()).is_some()),
+        Arg::Expr(syn::Expr::Call(call)) => {
+            matches!(&*call.func, syn::Expr::Path(p) if p.path.get_ident().is_some())
+        }
+        _ => false,
+    }
 }
 
 /// Emit the `let __el = __el...;` rebinding statement(s) for one element
@@ -538,8 +567,13 @@ fn when_stmt(call: &syn::ExprCall) -> TokenStream2 {
 /// and children are written straight into the block's own stream, which the
 /// brace group then takes ownership of — single-pass, no re-cloning.
 fn emit_element(out: &mut TokenStream2, el: &Element) {
-    let name = &el.name;
-    let name_str = name.to_string();
+    let head = &el.head;
+    // Multi-segment paths (`Button::new`) never match the built-in name
+    // table below — the empty string keeps them on the custom path.
+    let name_str = head
+        .get_ident()
+        .map(|i| i.to_string())
+        .unwrap_or_default();
 
     // ── text / text_raw / label ───────────────────────────────────────────
     if name_str == "text" || name_str == "text_raw" || name_str == "label" {
@@ -645,6 +679,17 @@ fn emit_element(out: &mut TokenStream2, el: &Element) {
         _ => None,
     };
 
+    // Custom constructors (unknown names, and paths like `Button::new`) take
+    // positional arguments: the leading run of args that aren't builder args
+    // goes to the constructor, the rest apply as builder calls. Built-in
+    // containers take no positional args, so their split is always 0.
+    let is_custom = known_base.is_none() && name_str != "scroll";
+    let ctor_split = if is_custom {
+        el.args.iter().take_while(|a| !is_builder_arg(a)).count()
+    } else {
+        0
+    };
+
     // Some API methods require a Stateful<Div> (i.e. the element must have
     // an element ID so GPUI can persist per-element state across frames).
     // When any of those appear on a known div-backed container — as a
@@ -688,7 +733,14 @@ fn emit_element(out: &mut TokenStream2, el: &Element) {
             (base, false)
         }
     } else {
-        (quote! { #name() }, false)
+        let ctor_args: Vec<&Expr> = el.args[..ctor_split]
+            .iter()
+            .map(|a| match a {
+                Arg::Expr(expr) => expr,
+                Arg::KeyValue(..) => unreachable!("key-value args are never constructor args"),
+            })
+            .collect();
+        (quote! { #head( #(#ctor_args),* ) }, false)
     };
 
     // ── Body: constructor, args, children, result — built in one stream ────
@@ -701,9 +753,27 @@ fn emit_element(out: &mut TokenStream2, el: &Element) {
     // that need type erasure can .into_any_element() themselves. Boxing
     // here would cost an allocation per render for everyone.
     let mut body = quote! { let __el = #constructor; };
-    for arg in &el.args {
+    for arg in &el.args[ctor_split..] {
         if id_consumed && matches!(arg, Arg::KeyValue(k, _) if *k == "id") {
             continue; // already folded into the constructor
+        }
+        // Past the split, a non-builder arg on a custom constructor is
+        // misplaced — surface it instead of letting `arg_stmt`'s generic
+        // fallback fire (its "Unknown style token" message would mislead).
+        if is_custom && !is_builder_arg(arg) {
+            let expr = match arg {
+                Arg::Expr(expr) => expr,
+                Arg::KeyValue(..) => unreachable!("key-value args are builder args"),
+            };
+            body.extend(
+                syn::Error::new_spanned(
+                    expr,
+                    "not a style token, `key = value` pair, or builder call — \
+                     constructor arguments must come before those",
+                )
+                .to_compile_error(),
+            );
+            continue;
         }
         body.extend(arg_stmt(arg));
     }
@@ -1777,6 +1847,66 @@ mod expansion_tests {
         // then dropped entirely, because unknown constructors never emit it.
         let out = expand(r#"custom_widget(id = "x", on_hover = h)"#);
         assert!(out.contains(r#"id ("x")"#), "id must survive: {out}");
+    }
+
+    // ── Path constructors and positional constructor args ─────────────────
+
+    #[test]
+    fn path_constructor_with_positional_and_builder_args() {
+        let out = expand(r#"Button::new("ok", label("Go"), primary(), on_click = h)"#);
+        assert!(out.contains(r#"Button :: new ("ok")"#), "{out}");
+        assert!(out.contains(r#". label ("Go")"#), "{out}");
+        assert!(out.contains(". primary ()"), "{out}");
+        assert!(out.contains(". on_click (h)"), "{out}");
+    }
+
+    #[test]
+    fn path_constructor_takes_style_tokens() {
+        // Anything implementing Styled accepts compile-time tokens.
+        let out = expand(r#"Button::new("ok", w_full)"#);
+        assert!(out.contains(r#"Button :: new ("ok")"#), "{out}");
+        assert!(out.contains(". w_full ()"), "{out}");
+    }
+
+    #[test]
+    fn path_constructor_with_children() {
+        let out = expand(r#"Badge::new("b") { text("3") }"#);
+        assert!(out.contains(r#"Badge :: new ("b")"#), "{out}");
+        assert!(out.contains(r#"child ("3")"#), "{out}");
+    }
+
+    #[test]
+    fn unknown_ident_constructor_takes_leading_args() {
+        let out = expand(r#"badge("hi", px_4)"#);
+        assert!(out.contains(r#"badge ("hi")"#), "{out}");
+        assert!(out.contains(". px (gpui :: px (4f32))"), "{out}");
+    }
+
+    #[test]
+    fn constructor_args_can_be_paths_calls_and_method_calls() {
+        // Path-callee calls, references, and method calls in leading
+        // position are constructor args, not builder calls.
+        let out = expand(r#"Input::new(&self.state, Thing::default(), self.id.clone())"#);
+        assert!(
+            out.contains("Input :: new (& self . state , Thing :: default () , self . id . clone ())"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn constructor_arg_after_builder_arg_is_error() {
+        let out = expand(r#"Button::new(px_4, "ok")"#);
+        assert!(
+            out.contains("constructor arguments must come before"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn builtin_containers_still_reject_positional_args() {
+        // The positional-arg rule is for custom constructors only.
+        let out = expand(r#"div("x")"#);
+        assert!(out.contains("unsupported element argument"), "{out}");
     }
 
     #[test]

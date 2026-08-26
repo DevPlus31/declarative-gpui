@@ -122,7 +122,28 @@ you'd write by hand, so there is nothing extra at runtime. Details in
 | `scroll(...)` | stateful div with a stable auto ID + `.overflow_y_scroll()` |
 | `list(id, count, render, ...)` | `gpui::uniform_list(...)` |
 | `text(content, ...)`, `text_raw`, `label` | the content, wrapped in a styled div only when style args are present |
-| any other name | called as a constructor: `badge(...)` → `badge()` |
+| any other name | called as a constructor: `badge("hi", px_4)` → `badge("hi").px(...)` |
+| any path | called as a constructor: `Button::new("ok", label("Go"))` → `Button::new("ok").label("Go")` |
+
+On custom constructors (unknown names and paths), the leading run of
+arguments that aren't style tokens, `key = value` pairs, or call-style
+builder methods is passed to the constructor itself; the rest chain as
+builder calls. This makes third-party component libraries such as
+[gpui-component](https://github.com/longbridge/gpui-component) first-class
+citizens:
+
+```rust
+ui! {
+    col(gap_4, items_center) {
+        Button::new("ok", primary(), label("Let's Go!"), on_click = handler)
+    }
+}
+```
+
+Constructor args can be literals, references, multi-segment paths,
+`Type::call(...)` expressions, and method calls (`self.state.clone()`); a
+call with a bare-ident callee (`label("Go")`) always chains as a builder
+method, so bind it to a variable first if the constructor needs one.
 
 Children go in braces; `if`/`else`, `if let`, `for`, and `match` (with
 guards) work anywhere a child can appear and expand to real Rust control
@@ -184,8 +205,9 @@ Elements using a method that requires `Stateful<Div>` — `on_click`,
 `overflow(_x/_y)_scroll` tokens — automatically get a stable `.id()` (from
 `file!:line!:column!`), so `div(on_click = …)` just works. An explicit
 `id = …` is folded into the constructor instead. On *custom* constructors
-(unknown element names) nothing is injected — there, put `id = …` before
-type-changing methods yourself.
+(unknown element names and `Type::new`-style paths) nothing is injected —
+there, pass the ID the component expects (usually a constructor arg) or put
+`id = …` before type-changing methods yourself.
 
 ## Style token reference
 

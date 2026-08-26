@@ -234,6 +234,61 @@ pub fn escape_hatches(show: bool) -> impl IntoElement {
     }
 }
 
+/// Path constructors: the leading run of non-builder args goes to the
+/// constructor, the rest chain as builder calls — the interop path for
+/// component libraries (gpui-component et al.) whose widgets are built as
+/// `Type::new(...)`. `Chip` stands in for such a component: a constructor
+/// with a required argument, its own builder method, and a `Styled` impl
+/// so style tokens land on it.
+#[derive(IntoElement)]
+pub struct Chip {
+    base: gpui::Div,
+    text: gpui::SharedString,
+}
+
+impl Chip {
+    pub fn new(text: impl Into<gpui::SharedString>) -> Self {
+        Self {
+            base: gpui::div(),
+            text: text.into(),
+        }
+    }
+
+    pub fn tone(mut self, color: gpui::Hsla) -> Self {
+        self.base = self.base.bg(color);
+        self
+    }
+}
+
+impl gpui::Styled for Chip {
+    fn style(&mut self) -> &mut gpui::StyleRefinement {
+        self.base.style()
+    }
+}
+
+impl gpui::RenderOnce for Chip {
+    fn render(self, _window: &mut gpui::Window, _cx: &mut gpui::App) -> impl IntoElement {
+        self.base.child(self.text)
+    }
+}
+
+/// A free-fn constructor taking an argument — unknown single-ident heads
+/// get the same leading-positional-arg treatment as paths.
+pub fn chip(text: &str) -> Chip {
+    Chip::new(text.to_string())
+}
+
+pub fn path_constructors() -> impl IntoElement {
+    ui! {
+        col(gap_2) {
+            Chip::new("plain")
+            Chip::new("styled", px_4, rounded_full, tone(color!(ff6b35)))
+            Chip::new(format!("dynamic {}", 1), opacity_50)
+            chip("free-fn", px_2)
+        }
+    }
+}
+
 /// Event handlers: mouse-button defaulting, stateful auto-ID injection for
 /// on_hover / on_click / active / overflow tokens, explicit id folding,
 /// hover style refinement.
@@ -307,6 +362,7 @@ mod tests {
         let _ = themed(false);
         let _ = conditional_tokens(true);
         let _ = conditional_tokens(false);
+        let _ = path_constructors();
     }
 
     /// `ui_expand!` yields the generated builder code as a string constant.

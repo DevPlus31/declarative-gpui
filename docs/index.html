@@ -290,8 +290,10 @@
     <section id="reference">
       <h2>Elements at a glance</h2>
       <p class="lead">
-        Built-in containers expand to flex-configured divs; any other name is
-        called as a constructor, so your own components drop straight in.
+        Built-in containers expand to flex-configured divs; any other name —
+        or path like <code>Button::new</code> — is called as a constructor
+        with the leading positional args, so your own components and
+        libraries like gpui-component drop straight in.
         Full style-token reference in the
         <a href="https://github.com/DevPlus31/declarative-gpui#style-token-reference">README</a>.
       </p>
@@ -304,7 +306,8 @@
           <tr><td><code>scroll(...)</code></td><td>stateful div, stable auto ID + <code>overflow_y_scroll()</code></td></tr>
           <tr><td><code>list(id, count, render)</code></td><td><code>gpui::uniform_list(...)</code> — closure moved, no Arc</td></tr>
           <tr><td><code>text(content, ...)</code></td><td>bare content; styled wrapper only when styles present</td></tr>
-          <tr><td><code>badge(...)</code> <em style="color:var(--muted)">(any name)</em></td><td><code>badge()</code> — your constructor</td></tr>
+          <tr><td><code>badge("hi", ...)</code> <em style="color:var(--muted)">(any name)</em></td><td><code>badge("hi")</code> — your constructor, leading args pass through</td></tr>
+          <tr><td><code>Button::new("ok", label("Go"))</code> <em style="color:var(--muted)">(any path)</em></td><td><code>Button::new("ok").label("Go")</code></td></tr>
         </table>
       </div>
     </section>
